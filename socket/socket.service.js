@@ -1,84 +1,57 @@
-const WebSocket = require("ws");
+const { Server } = require("socket.io");
 
 class WebSocketService {
   constructor() {
-    this.clients = new Map(); // Map to store connected clients by chatId
+    this.io = null;
   }
 
   initialize(server) {
-    this.wss = new WebSocket.Server({ noServer: true }); // WebSocket server without its own port
+    this.io = new Server(server, {
+      path: "/chatapp/socket.io",
+      cors: {
+        origin: "*",
+        methods: ["GET", "POST"],
+      },
+      
+    });
 
-    this.wss.on("connection", (ws, req) => {
-      console.log("WebSocket client connected");
+    this.io.on("connection", (socket) => {
+      console.log("A client connected:", socket.id);
 
-      // Extract chatId from query params
-      const urlParams = new URLSearchParams(req.url.replace("/chatapp/ws?", ""));
-      const chatId = urlParams.get("chatId");
-
+      const chatId = socket.handshake.query.chatId; // Extract chatId from frontend
       if (!chatId) {
-        console.error("No chatId provided in WebSocket URL");
-        ws.close(4000, "Chat ID is required");
+        console.error("No chatId provided!");
+        socket.disconnect();
         return;
       }
 
-      if (!this.clients.has(chatId)) {
-        this.clients.set(chatId, new Set());
-      }
-      this.clients.get(chatId).add(ws);
+      socket.join(chatId); // Join the chat room
+      console.log(`Client joined chatId: ${chatId}`);
 
-      console.log(`Client registered to chatId: ${chatId}`);
+      // Listen for incoming messages from clients
+      socket.on("sendMessage", (message) => {
+        console.log(`Message received for chatId ${chatId}:`, message);
 
-      ws.on("close", () => {
-        console.log("Client disconnected");
-        this.clients.get(chatId)?.delete(ws);
-        if (this.clients.get(chatId)?.size === 0) {
-          this.clients.delete(chatId);
-        }
+        // Broadcast the message to all clients in the same chatId room
+        this.io.to(chatId).emit("receiveMessage", message);
+      });
+
+      // Handle disconnect
+      socket.on("disconnect", () => {
+        console.log(`Client disconnected: ${socket.id}`);
       });
     });
-
-    // Attach WebSocket server to existing HTTP server
-    server.on("upgrade", (req, socket, head) => {
-      if (req.url.startsWith("/chatapp/ws")) {
-        this.wss.handleUpgrade(req, socket, head, (ws) => {
-          this.wss.emit("connection", ws, req);
-        });
-      } else {
-        socket.destroy();
-      }
-    });
   }
 
-  // Function to send messages to all clients connected to a specific chatId
+  // Function to send messages to a specific chatId (used in Chatwoot webhook)
   sendMessage(chatId, messagePayload) {
-    if (!this.clients.has(chatId)) return;
+    if (!this.io) {
+      console.error("Socket.IO not initialized");
+      return;
+    }
 
-    const message = JSON.stringify(messagePayload);
-    this.clients.get(chatId).forEach((client) => {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(message);
-      }
-    });
-
-    console.log(`Message sent to chatId ${chatId}:`, messagePayload);
-  }
-
-  updateStatus(chatId, status) {
-    if (!this.clients.has(chatId)) return;
-
-    const statusPayload = {
-      type: "status",
-      status,
-    };
-
-    const message = JSON.stringify(statusPayload);
-    this.clients.get(chatId).forEach((client) => {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(message);
-      }
-    });
-
-    console.log(`Status updated for chatId ${chatId}:`, status);
+    console.log(`Sending message to chatId ${chatId}:`, messagePayload);
+    this.io.to(chatId).emit("receiveMessage", messagePayload);
   }
 }
 
