@@ -15,10 +15,12 @@ class WebSocketService {
       
     });
 
+    console.log(`Socket.IO initialized on path: /chatapp/socket.io. Port ${process.env.PORT}. Listening for connections...`);
+
     this.io.on("connection", (socket) => {
       console.log("A client connected:", socket.id);
 
-      const chatId = socket.handshake.query.chatId; // Extract chatId from frontend
+      const {chatId} = socket.handshake.auth; // Extract chatId from frontend
       if (!chatId) {
         console.error("No chatId provided!");
         socket.disconnect();
@@ -27,14 +29,6 @@ class WebSocketService {
 
       socket.join(chatId); // Join the chat room
       console.log(`Client joined chatId: ${chatId}`);
-
-      // Listen for incoming messages from clients
-      socket.on("sendMessage", (message) => {
-        console.log(`Message received for chatId ${chatId}:`, message);
-
-        // Broadcast the message to all clients in the same chatId room
-        this.io.to(chatId).emit("receiveMessage", message);
-      });
 
       // Handle disconnect
       socket.on("disconnect", () => {
@@ -49,10 +43,13 @@ class WebSocketService {
       console.error("Socket.IO not initialized");
       return;
     }
-
+  
     console.log(`Sending message to chatId ${chatId}:`, messagePayload);
-    this.io.to(chatId).emit("receiveMessage", messagePayload);
-  }
+    console.log("Current rooms:", this.io.sockets.adapter.rooms);
+  
+    // Use emit() with the event name "message"
+    this.io.send(messagePayload);
+  }  
 }
 
 module.exports = new WebSocketService();

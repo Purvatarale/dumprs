@@ -12,9 +12,7 @@ const http = require("http");
 const wsService = require("./socket/socket.service");
 
 const app = express();
-const server = http.createServer(app);
 
-wsService.initialize(server);
 
 app.use(express.json());
 app.use(cors({
@@ -31,12 +29,14 @@ app.use("/chatapp/api/v1/conversations", validateVouchTokens, conversationRouter
 app.use("/chatapp/api/v1", validateVouchTokens, userRouter); 
 app.post("/chatapp/api/v1/webhook/listener", chatwootListener);
 
-console.log()
+const server = http.createServer(app);
+
+wsService.initialize(server);
+
 app.use("/*", (req, res) => {
   res.status(404).json({ message: "Not Found" });
 });
 
 server.listen(process.env.PORT, () => {
   console.log(`Server is running on port ${process.env.PORT}`);
-  console.log(wsService)
 });
